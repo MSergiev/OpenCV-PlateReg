@@ -24,6 +24,10 @@ using namespace cv::superres;
 #define CROP_HEIGHT 35
 #define CROP_SCALE 10
 
+#define MEDIAN_SIZE 1
+#define ERODE_SIZE 2
+#define DILATE_SIZE 2
+
 #define FILE_FPS 5
 
 #define CROP_FILE "crop.avi"
@@ -41,13 +45,18 @@ void track( string inFile, string outFile ) {
         return;
     }
     VideoWriter writer;
-    writer.open( outFile, CV_FOURCC('M','J','P','G'), FILE_FPS, FILE_SIZE );
+    writer.open( outFile, CV_FOURCC('X','V','I','D'), FILE_FPS, FILE_SIZE );
     if( !writer.isOpened() ) {
         cerr << "Output file cannot be opened" << endl;
         return;
     }
     
-    Ptr<Tracker> tracker = TrackerMIL::create();
+//     Ptr<Tracker> tracker = TrackerBoosting::create();
+//     Ptr<Tracker> tracker = TrackerMIL::create();
+    Ptr<Tracker> tracker = TrackerKCF::create();
+//     Ptr<Tracker> tracker = TrackerTLD::create();
+//     Ptr<Tracker> tracker = TrackerMedianFlow::create();
+//     Ptr<Tracker> tracker = TrackerGOTURN::create();
     
     Mat frame, crop;
     cap.read(frame);
@@ -58,12 +67,13 @@ void track( string inFile, string outFile ) {
     
     writer << crop;
     
-    rectangle(frame, roi, Scalar( 255, 0, 0 ), 2, 1 );
-    
     resize( crop, crop, CROP_SIZE );
     
-    imshow("Frame", frame);
     imshow("Tracking", crop);
+    
+    rectangle(frame, roi, Scalar( 255, 0, 0 ), 2, 1 );
+    resize( frame, frame, CROP_SIZE );
+    imshow("Frame", frame);
     
     tracker->init(frame, roi);
     
@@ -74,16 +84,16 @@ void track( string inFile, string outFile ) {
         
         crop = frame(roi);
         
-        if( waitKey(100) > 0 )  break;
+        if( waitKey(50) > 0 )  break;
         
         writer << crop;
         
-        rectangle(frame, roi, Scalar( 255, 0, 0 ), 2, 1 );
-        
         resize( crop, crop, CROP_SIZE );
-        
-        imshow("Frame", frame);
         imshow("Tracking", crop);
+        
+        rectangle(frame, roi, Scalar( 255, 0, 0 ), 2, 1 );
+        resize( frame, frame, CROP_SIZE );
+        imshow("Frame", frame);
     }
 }
 
@@ -98,7 +108,7 @@ void stabilize( string inFile, string outFile ) {
     Mat fA;
     
     VideoWriter writer;
-    writer.open( outFile, CV_FOURCC('M','J','P','G'), FILE_FPS, FILE_SIZE );
+    writer.open( outFile, CV_FOURCC('X','V','I','D'), FILE_FPS, FILE_SIZE );
     if( !writer.isOpened() ) {
         cerr << "Output file cannot be opened" << endl;
         return;
@@ -118,12 +128,18 @@ void stabilize( string inFile, string outFile ) {
         
         cvtColor(fB, fB, CV_BGR2GRAY);
         Mat warp_matrix = Mat::eye(2, 3, CV_32F);
-        int number_of_iterations = 5000;
+        int number_of_iterations = 50;
         double termination_eps = 1e-10;
         TermCriteria criteria(TermCriteria::COUNT+TermCriteria::EPS, number_of_iterations, termination_eps);
         findTransformECC( fA, fB, warp_matrix, MOTION_TRANSLATION, criteria );
-        warpAffine(fB, fB, warp_matrix, fB.size(), INTER_LINEAR + WARP_INVERSE_MAP);
+        warpAffine(fB, fB, warp_matrix, fB.size(), INTER_AREA + WARP_INVERSE_MAP);
 //         warpPerspective( fB, fB, warp_matrix, fB.size(),INTER_LINEAR + WARP_INVERSE_MAP );
+                
+//         medianBlur( fB, fB, MEDIAN_SIZE );
+//         erode( fB, fB, getStructuringElement( MORPH_ELLIPSE, Size(ERODE_SIZE,ERODE_SIZE)) );
+//         dilate( fB, fB, getStructuringElement( MORPH_ELLIPSE, Size(DILATE_SIZE,DILATE_SIZE)) );
+//         dilate( fB, fB, getStructuringElement( MORPH_ELLIPSE, Size(DILATE_SIZE,DILATE_SIZE)) );
+//         erode( fB, fB, getStructuringElement( MORPH_ELLIPSE, Size(ERODE_SIZE,ERODE_SIZE)) );
         
         fA = fB;
         tm.stop();
@@ -142,9 +158,9 @@ void stabilize( string inFile, string outFile ) {
 
 void superRes( string inFile, string outFile ) {
     
-    static const int scale = 4;
-    static const int iterations = 100;
-    static const int temporalAreaRadius = 4;
+    static const int scale = 3;
+    static const int iterations = 10;
+    static const int temporalAreaRadius = 15;
     
     Ptr<FrameSource> frameSource;
     
@@ -153,10 +169,6 @@ void superRes( string inFile, string outFile ) {
     
     Mat frame;
     frameSource->nextFrame(frame);
-    cout << "Input           : " << inFile << " " << frame.size() << endl;
-    cout << "Scale factor    : " << scale << endl;
-    cout << "Iterations      : " << iterations << endl;
-    cout << "Temporal radius : " << temporalAreaRadius << endl;
     
     Ptr<SuperResolution> superRes;   
     superRes = createSuperResolution_BTVL1();
@@ -182,7 +194,7 @@ void superRes( string inFile, string outFile ) {
         if( waitKey(100) > 0 )  break;
         
         if( !writer.isOpened() ) 
-            writer.open( outFile, CV_FOURCC('M','J','P','G'), FILE_FPS, result.size() );
+            writer.open( outFile, CV_FOURCC('X','V','I','D'), FILE_FPS, result.size() );
         writer << result;
         
         resize( result, result, CROP_SIZE );
@@ -194,19 +206,14 @@ void superRes( string inFile, string outFile ) {
 
 int main( int argc, const char* argv[] ) {
 
-    const string inputVideoName = argv[2];
-    if( argc < 2 ) {
+    if( argc < 1 ) {
         cout << "Missing input file" << endl;
         return 1;
     }
-
     
-    track( argv[2], CROP_FILE );
-//     return 0;
+    track( argv[1], CROP_FILE );
+    superRes( CROP_FILE, STABLE_FILE );
+    stabilize( STABLE_FILE, FINAL_FILE );
     
-    stabilize( CROP_FILE, STABLE_FILE );
-//     return 0;
-
-    superRes( STABLE_FILE, FINAL_FILE );
     return 0;
 }
