@@ -18,17 +18,17 @@ using namespace std;
 using namespace cv;
 using namespace cv::superres;
 
-#define CROP_X 146
-#define CROP_Y 116
-#define CROP_WIDTH 35
-#define CROP_HEIGHT 35
+#define CROP_X 527/*146*/
+#define CROP_Y 375/*116*/
+#define CROP_WIDTH 60
+#define CROP_HEIGHT 60
 #define CROP_SCALE 10
 
-#define MEDIAN_SIZE 1
-#define ERODE_SIZE 2
-#define DILATE_SIZE 2
+#define MEDIAN_SIZE 3
+#define ERODE_SIZE 4
+#define DILATE_SIZE 4
 
-#define FILE_FPS 5
+#define FILE_FPS 25
 
 #define CROP_FILE "crop.avi"
 #define STABLE_FILE "stable.avi"
@@ -65,6 +65,9 @@ void track( string inFile, string outFile ) {
     
     crop = frame(roi);
     
+    cvtColor(crop, crop, CV_BGR2GRAY);
+    equalizeHist( crop, crop );
+    cvtColor(crop, crop, CV_GRAY2BGR);
     writer << crop;
     
     resize( crop, crop, CROP_SIZE );
@@ -86,6 +89,9 @@ void track( string inFile, string outFile ) {
         
         if( waitKey(50) > 0 )  break;
         
+        cvtColor(crop, crop, CV_BGR2GRAY);
+        equalizeHist( crop, crop );
+        cvtColor(crop, crop, CV_GRAY2BGR);
         writer << crop;
         
         resize( crop, crop, CROP_SIZE );
@@ -115,7 +121,7 @@ void stabilize( string inFile, string outFile ) {
     } else {
         if( !cap.read(fA) ) return;
         writer << fA;
-        cvtColor(fA, fA, CV_BGR2GRAY);
+        cvtColor( fA, fA, CV_BGR2GRAY );
     }
     
     for( int i = 0;; ++i ) {
@@ -127,12 +133,13 @@ void stabilize( string inFile, string outFile ) {
         tm.start();
         
         cvtColor(fB, fB, CV_BGR2GRAY);
-        Mat warp_matrix = Mat::eye(2, 3, CV_32F);
-        int number_of_iterations = 50;
-        double termination_eps = 1e-10;
-        TermCriteria criteria(TermCriteria::COUNT+TermCriteria::EPS, number_of_iterations, termination_eps);
-        findTransformECC( fA, fB, warp_matrix, MOTION_TRANSLATION, criteria );
-        warpAffine(fB, fB, warp_matrix, fB.size(), INTER_AREA + WARP_INVERSE_MAP);
+        
+//         Mat warp_matrix = Mat::eye(2, 3, CV_32F);
+//         int number_of_iterations = 50;
+//         double termination_eps = 1e-10;
+//         TermCriteria criteria( TermCriteria::COUNT+TermCriteria::EPS, number_of_iterations, termination_eps );
+//         findTransformECC( fA, fB, warp_matrix, MOTION_TRANSLATION, criteria );
+//         warpAffine( fB, fB, warp_matrix, fB.size(), INTER_LINEAR + WARP_INVERSE_MAP) ;
 //         warpPerspective( fB, fB, warp_matrix, fB.size(),INTER_LINEAR + WARP_INVERSE_MAP );
                 
 //         medianBlur( fB, fB, MEDIAN_SIZE );
@@ -141,13 +148,16 @@ void stabilize( string inFile, string outFile ) {
 //         dilate( fB, fB, getStructuringElement( MORPH_ELLIPSE, Size(DILATE_SIZE,DILATE_SIZE)) );
 //         erode( fB, fB, getStructuringElement( MORPH_ELLIPSE, Size(ERODE_SIZE,ERODE_SIZE)) );
         
+        equalizeHist( fB, fB );
+        threshold(fB, fB, 190, 255, 0);
+        
         fA = fB;
         tm.stop();
         cout << tm.getTimeSec() << " sec" << endl;
         
-        if( waitKey(100) > 0 )  break;
+        if( waitKey(40) > 0 )  break;
         
-        cvtColor(fB, fB, CV_GRAY2BGR);
+        cvtColor( fB, fB, CV_GRAY2BGR);
         writer << fB;
         
         resize( fB, fB, CROP_SIZE );
@@ -158,9 +168,9 @@ void stabilize( string inFile, string outFile ) {
 
 void superRes( string inFile, string outFile ) {
     
-    static const int scale = 3;
+    static const int scale = 4;
     static const int iterations = 10;
-    static const int temporalAreaRadius = 15;
+    static const int temporalAreaRadius = 20;
     
     Ptr<FrameSource> frameSource;
     
