@@ -18,10 +18,10 @@ using namespace std;
 using namespace cv;
 using namespace cv::superres;
 
-#define CROP_X 542
-#define CROP_Y 393
-#define CROP_WIDTH 30
-#define CROP_HEIGHT 30
+#define CROP_X 602
+#define CROP_Y 337
+#define CROP_WIDTH 50
+#define CROP_HEIGHT 20
 #define CROP_SCALE 10
 
 #define STABLE_X 4
@@ -29,9 +29,9 @@ using namespace cv::superres;
 #define STABLE_WIDTH 22
 #define STABLE_HEIGHT 22
 
-#define MEDIAN_SIZE 3
-#define ERODE_SIZE 2
-#define DILATE_SIZE 2
+#define MEDIAN_SIZE 5
+#define ERODE_SIZE 3
+#define DILATE_SIZE 3
 
 #define FILE_FPS 25
 #define PREVIEW_DELAY 40
@@ -60,9 +60,9 @@ void track( string inFile, string outFile ) {
     
 //     Ptr<Tracker> tracker = TrackerBoosting::create();
 //     Ptr<Tracker> tracker = TrackerMIL::create();
-//     Ptr<Tracker> tracker = TrackerKCF::create();
+    Ptr<Tracker> tracker = TrackerKCF::create();
 //     Ptr<Tracker> tracker = TrackerTLD::create();
-    Ptr<Tracker> tracker = TrackerMedianFlow::create();
+//     Ptr<Tracker> tracker = TrackerMedianFlow::create();
 //     Ptr<Tracker> tracker = TrackerGOTURN::create();
     
     Mat frame, crop;
@@ -163,10 +163,10 @@ void stabilize( string inFile, string outFile ) {
         
 //         if( i%100 == 0) fA = fB;
         Mat warp_matrix = Mat::eye(2, 3, CV_32F);
-//         int number_of_iterations = 100;
-//         double termination_eps = -1/*1e-10*/;
-//         TermCriteria criteria( TermCriteria::COUNT+TermCriteria::EPS, number_of_iterations, termination_eps );
-        findTransformECC( fB, fA, warp_matrix/*, MOTION_TRANSLATION, criteria*/ );
+        int number_of_iterations = 100;
+        double termination_eps = 1e-10;
+        TermCriteria criteria( TermCriteria::COUNT+TermCriteria::EPS, number_of_iterations, termination_eps );
+        findTransformECC( fB, fA, warp_matrix, MOTION_AFFINE, criteria );
 //         warp_matrix = estimateRigidTransform(fB, fA, false);
         warpAffine( fB, fB, warp_matrix, fB.size(), INTER_LANCZOS4 );
 //         warpPerspective( fB, fB, warp_matrix, fB.size()/*, INTER_LINEAR + WARP_INVERSE_MAP */);
@@ -191,9 +191,9 @@ void stabilize( string inFile, string outFile ) {
 
 void superRes( string inFile, string outFile ) {
     
-    static const int scale = 4;
+    static const int scale = 10;
     static const int iterations = 10;
-    static const int temporalAreaRadius = 30;
+    static const int temporalAreaRadius = 50;
     
     Ptr<FrameSource> frameSource;
     
@@ -271,21 +271,31 @@ void morph( string inFile, string outFile ) {
         
         cvtColor(fB, fB, CV_BGR2GRAY);
 
-//         medianBlur( fB, fB, MEDIAN_SIZE );
-        erode( fB, fB, getStructuringElement( MORPH_ELLIPSE, Size(ERODE_SIZE,ERODE_SIZE)) );
-        dilate( fB, fB, getStructuringElement( MORPH_ELLIPSE, Size(DILATE_SIZE,DILATE_SIZE)) );
-        dilate( fB, fB, getStructuringElement( MORPH_ELLIPSE, Size(DILATE_SIZE,DILATE_SIZE)) );
-        erode( fB, fB, getStructuringElement( MORPH_ELLIPSE, Size(ERODE_SIZE,ERODE_SIZE)) );
-        morphologyEx( fB, fB, MORPH_GRADIENT, getStructuringElement( MORPH_RECT, Size(ERODE_SIZE,ERODE_SIZE)));
-//         bitwise_not( fB, fB );
+        char d = 8, s = -1, c = -1;
+        char kernel_data[] = {
+             c,s,c, 
+             s,d,s, 
+             c,s,c
+        };
+        Mat kernel( 3, 3, CV_8S, kernel_data );
+        
+//         erode( fB, fB, getStructuringElement( MORPH_ELLIPSE, Size(ERODE_SIZE,ERODE_SIZE)) );
+//         dilate( fB, fB, getStructuringElement( MORPH_ELLIPSE, Size(DILATE_SIZE,DILATE_SIZE)) );
+//         dilate( fB, fB, getStructuringElement( MORPH_ELLIPSE, Size(DILATE_SIZE,DILATE_SIZE)) );
+//         erode( fB, fB, getStructuringElement( MORPH_ELLIPSE, Size(ERODE_SIZE,ERODE_SIZE)) );
+        morphologyEx( fB, fB, MORPH_GRADIENT, getStructuringElement( MORPH_RECT, Size(4,4)));
+//         threshold(fB, fB, 60, 255, 3);
+        bitwise_not( fB, fB );
+        medianBlur( fB, fB, 9 );
         equalizeHist( fB, fB );
-//         threshold(fB, fB, 200, 255, 0);
+        threshold(fB, fB, 0, 255, THRESH_BINARY | THRESH_OTSU);
+        filter2D( fB, fB, -1, kernel );
         
         fA = fB;
         tm.stop();
         cout << tm.getTimeSec() << " sec" << endl;
         
-        if( waitKey(PREVIEW_DELAY+100) > 0 )  break;
+        if( waitKey(PREVIEW_DELAY) > 0 )  break;
         
         cvtColor( fB, fB, CV_GRAY2BGR);
         writer << fB;
@@ -307,8 +317,8 @@ int main( int argc, const char* argv[] ) {
     
 //     track( argv[1], CROP_FILE );
 //     stabilize( CROP_FILE, STABLE_FILE );
-    superRes( CROP_FILE, SUPER_FILE );
-//     morph( SUPER_FILE, FINAL_FILE );
+//     superRes( CROP_FILE, SUPER_FILE );
+    morph( SUPER_FILE, FINAL_FILE );
     
     return 0;
 }
