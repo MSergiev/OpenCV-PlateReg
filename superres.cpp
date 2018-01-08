@@ -13,6 +13,7 @@
 #include "opencv2/video/video.hpp"
 #include "opencv2/tracking.hpp"
 #include "opencv2/core/ocl.hpp"
+#include "opencv2/photo.hpp"
 
 using namespace std;
 using namespace cv;
@@ -30,8 +31,8 @@ using namespace cv::superres;
 #define STABLE_HEIGHT 22
 
 #define MEDIAN_SIZE 5
-#define ERODE_SIZE 3
-#define DILATE_SIZE 3
+#define ERODE_SIZE 2
+#define DILATE_SIZE 2
 
 #define FILE_FPS 25
 #define PREVIEW_DELAY 40
@@ -271,7 +272,7 @@ void morph( string inFile, string outFile ) {
         
         cvtColor(fB, fB, CV_BGR2GRAY);
 
-        char d = 8, s = -1, c = -1;
+        char d = 5, s = -1, c = 0;
         char kernel_data[] = {
              c,s,c, 
              s,d,s, 
@@ -283,13 +284,25 @@ void morph( string inFile, string outFile ) {
 //         dilate( fB, fB, getStructuringElement( MORPH_ELLIPSE, Size(DILATE_SIZE,DILATE_SIZE)) );
 //         dilate( fB, fB, getStructuringElement( MORPH_ELLIPSE, Size(DILATE_SIZE,DILATE_SIZE)) );
 //         erode( fB, fB, getStructuringElement( MORPH_ELLIPSE, Size(ERODE_SIZE,ERODE_SIZE)) );
-        morphologyEx( fB, fB, MORPH_GRADIENT, getStructuringElement( MORPH_RECT, Size(4,4)));
+//         morphologyEx( fB, fB, MORPH_GRADIENT, getStructuringElement( MORPH_RECT, Size(4,4)));
 //         threshold(fB, fB, 60, 255, 3);
-        bitwise_not( fB, fB );
-        medianBlur( fB, fB, 9 );
+//         bitwise_not( fB, fB );
+//         medianBlur( fB, fB, 15 );
+//         equalizeHist( fB, fB );
+//         threshold(fB, fB, 180, 255, THRESH_BINARY | THRESH_OTSU);
+        for( unsigned char i = 0; i < 3; ++i ) {
+            filter2D( fB, fB, -1, kernel );
+            erode( fB, fB, getStructuringElement( MORPH_ELLIPSE, Size(ERODE_SIZE,ERODE_SIZE)) );
+            dilate( fB, fB, getStructuringElement( MORPH_ELLIPSE, Size(DILATE_SIZE,DILATE_SIZE)) );
+//             medianBlur( fB, fB, 3 );
+            //dilate( fB, fB, getStructuringElement( MORPH_ELLIPSE, Size(DILATE_SIZE,DILATE_SIZE)) );
+//             erode( fB, fB, getStructuringElement( MORPH_ELLIPSE, Size(ERODE_SIZE,ERODE_SIZE)) );
+        }
+//         fastNlMeansDenoising( fB, fB, 5, 30 );
         equalizeHist( fB, fB );
-        threshold(fB, fB, 0, 255, THRESH_BINARY | THRESH_OTSU);
-        filter2D( fB, fB, -1, kernel );
+        threshold(fB, fB, 180, 255, THRESH_BINARY);
+        dilate( fB, fB, getStructuringElement( MORPH_ELLIPSE, Size(2,2)) );
+        erode( fB, fB, getStructuringElement( MORPH_ELLIPSE, Size(2,2)) );
         
         fA = fB;
         tm.stop();
