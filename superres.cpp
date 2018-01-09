@@ -1,8 +1,5 @@
 #include <iostream>
 #include <iomanip>
-#include <string>
-#include <ctype.h>
-
 #include "opencv2/core.hpp"
 #include "opencv2/core/utility.hpp"
 #include "opencv2/highgui.hpp"
@@ -37,6 +34,7 @@ using namespace cv::superres;
 #define FILE_FPS 25
 #define PREVIEW_DELAY 40
 
+#define INPUT_FILE "00_input.mp4"
 #define CROP_FILE "01_crop.avi"
 #define STABLE_FILE "02_stable.avi"
 #define SUPER_FILE "03_super.avi"
@@ -45,13 +43,54 @@ using namespace cv::superres;
 #define FILE_SIZE Size(CROP_WIDTH, CROP_HEIGHT)
 #define CROP_SIZE Size(CROP_WIDTH*CROP_SCALE, CROP_HEIGHT*CROP_SCALE)
 
+
+
+
+// Function prototypes
+void track( string inFile, string outFile );
+void stabilize( string inFile, string outFile );
+void superRes( string inFile, string outFile );
+void morph( string inFile, string outFile );
+
+
+
+
+// Main method
+int main( int argc, const char* argv[] ) {
+
+    if( argc != 2 ) {
+        cout << "Missing options" << endl;
+        cout << "-t to track" << endl;
+        cout << "-s to stabilize" << endl;
+        cout << "-r to superres" << endl;
+        cout << "-m to morph" << endl;
+        return 1;
+    }
+    
+    switch( argv[1][1] ) {
+        case 't': track( INPUT_FILE, CROP_FILE ); break;
+        case 's': stabilize( CROP_FILE, STABLE_FILE ); break;
+        case 'r': superRes( CROP_FILE, SUPER_FILE ); break;
+        case 'm': morph( SUPER_FILE, FINAL_FILE ); break;
+        default: cout << "Invalid argument" << endl;
+    }
+    
+    return 0;
+}
+
+
+
+
+// Tracking function
 void track( string inFile, string outFile ) {
     
+    // Open input file
     VideoCapture cap( inFile );
     if( !cap.isOpened() ) {
         cerr << "Input file cannot be opened" << endl;
         return;
     }
+    // Open output file
     VideoWriter writer;
     writer.open( outFile, CV_FOURCC('X','V','I','D'), FILE_FPS, FILE_SIZE );
     if( !writer.isOpened() ) {
@@ -59,6 +98,7 @@ void track( string inFile, string outFile ) {
         return;
     }
     
+    // Select tracking algorithm
 //     Ptr<Tracker> tracker = TrackerBoosting::create();
 //     Ptr<Tracker> tracker = TrackerMIL::create();
     Ptr<Tracker> tracker = TrackerKCF::create();
@@ -66,272 +106,340 @@ void track( string inFile, string outFile ) {
 //     Ptr<Tracker> tracker = TrackerMedianFlow::create();
 //     Ptr<Tracker> tracker = TrackerGOTURN::create();
     
+    // Read first frame
     Mat frame, crop;
     cap.read(frame);
     
+    // Define region of interest
     Rect2d roi(CROP_X, CROP_Y, CROP_WIDTH, CROP_HEIGHT);
     
+    // Crop frame to ROI rectangle
     crop = frame(roi);
     
+    // Equalize grayscale histogram
     cvtColor( crop, crop, CV_BGR2GRAY );
     equalizeHist( crop, crop );
     cvtColor( crop, crop, CV_GRAY2BGR );
     
+    // Write cropped file to file
     writer << crop;
     
+    // Resize cropped file for the preview
     resize( crop, crop, CROP_SIZE );
     
+    // Show cropped image
     imshow( "Tracking", crop );
     
+    // Draw ROI on the frame
     rectangle( frame, roi, Scalar( 255, 0, 0 ), 2, 1 );
-//     resize( frame, frame, CROP_SIZE );
+    
+    // Show frame
     imshow( "Frame", frame );
     
+    // Initialize tracker
     tracker->init(frame, roi);
     
+    // Process video frames
     for( int i = 0;; ++i ) {
+        // Read frame
         if( !cap.read(frame) ) break;
         
+        // Update ROI with new frame data
         tracker->update(frame, roi);
         
+        // Crop frame to ROI rectangle
         crop = frame(roi);
         
+        // Check for keypress
         if( waitKey(PREVIEW_DELAY) > 0 )  break;
         
+        // Threshold image to increase contrast
         cvtColor( crop, crop, CV_BGR2GRAY );
-        threshold( crop, crop, 50, 255, 3 );
+        threshold( crop, crop, 50, 255, THRESH_TOZERO | THRESH_OTSU );
         equalizeHist( crop, crop );
         cvtColor( crop, crop, CV_GRAY2BGR );
         
+        // Resize cropped image
         resize( crop, crop, FILE_SIZE, 0, 0, INTER_LANCZOS4 );
+        
+        // Write cropped image to file
         writer << crop;
         
+        // Resize cropped image for the preview
         resize( crop, crop, CROP_SIZE );
+        
+        // Show cropped image
         imshow( "Tracking", crop );
         
+        // Draw ROI on frame
         rectangle(frame, roi, Scalar( 255, 0, 0 ), 2, 1 );
-//         resize( frame, frame, CROP_SIZE );
+        
+        // Show frame
         imshow("Frame", frame);
     }
+    
+    // Release windows
     destroyWindow( "Frame" );
     destroyWindow( "Tracking" );
 }
 
+
+
+
+// Stabilizing function
 void stabilize( string inFile, string outFile ) {
     
+    // Open input file
     VideoCapture cap( inFile );
     if( !cap.isOpened() ) {
         cerr << "Input file cannot be opened" << endl;
         return;
     }
     
+    // Create comparison frame matrix
     Mat fA;
+    
+    // Define stabilization region of interest
     Rect roi( STABLE_X, STABLE_Y, STABLE_WIDTH, STABLE_HEIGHT );
     
+    // Video writer instance
     VideoWriter writer;
-    writer.open( outFile, CV_FOURCC('X','V','I','D'), FILE_FPS, FILE_SIZE );
-    if( !writer.isOpened() ) {
-        cerr << "Output file cannot be opened" << endl;
-        return;
-    } else {
-        if( !cap.read(fA) ) return;
-//         medianBlur( fA, fA, 4 );
-//         Sobel( fA, fA, CV_8U, 0, 1 );
-//         erode( fA, fA, getStructuringElement( MORPH_ELLIPSE, Size(1,3)) );
-//         dilate( fA, fA, getStructuringElement( MORPH_ELLIPSE, Size(1,2)) );
-        
-//         writer << fA;
-        cvtColor( fA, fA, CV_BGR2GRAY );
-//         Canny( fA, fA, 128, 255, 3);
-    }
     
+    // Read comparison frame
+    if( !cap.read(fA) ) return;
+    cvtColor( fA, fA, CV_BGR2GRAY );
+        
+    // Process video frames
     for( int i = 0;; ++i ) {
+        // Read current frame
         Mat fB;
         if( !cap.read(fB) ) break;
-//         if( i%13!=0 ) continue;
+        
+        // Draw current frame index
         cout << '[' << setw(3) << i << "] : " << flush;
         
+        // Start processing timer
         TickMeter tm;
         tm.start();
         
-//         medianBlur( fB, fB, 4 );
+        // Convert to grayscale
         cvtColor(fB, fB, CV_BGR2GRAY);
-//         Canny( fB, fB, 50, 150, 3);
-//         Sobel( fB, fB, CV_8U, 0, 1 );
-//         erode( fB, fB, getStructuringElement( MORPH_ELLIPSE, Size(1,3)) );
-//         dilate( fB, fB, getStructuringElement( MORPH_ELLIPSE, Size(1,2)) );
         
-        
-//         if( i%100 == 0) fA = fB;
+        // Create affine transformation matrix
         Mat warp_matrix = Mat::eye(2, 3, CV_32F);
-        int number_of_iterations = 100;
-        double termination_eps = 1e-10;
-        TermCriteria criteria( TermCriteria::COUNT+TermCriteria::EPS, number_of_iterations, termination_eps );
-        findTransformECC( fB, fA, warp_matrix, MOTION_AFFINE, criteria );
-//         warp_matrix = estimateRigidTransform(fB, fA, false);
-        warpAffine( fB, fB, warp_matrix, fB.size(), INTER_LANCZOS4 );
-//         warpPerspective( fB, fB, warp_matrix, fB.size()/*, INTER_LINEAR + WARP_INVERSE_MAP */);
         
+        // Number of processing iterations
+        const int number_of_iterations = 100;
+        
+        // Minimum transformation offset
+        const double termination_eps = 1e-10;
+        
+        // Create transfromation termination criterion
+        TermCriteria criteria( TermCriteria::COUNT+TermCriteria::EPS, number_of_iterations, termination_eps );
+        
+        // Find affine transformation from fA to fB
+        findTransformECC( fB, fA, warp_matrix, MOTION_AFFINE, criteria );
+        
+        // Warp fB according to the found transformation
+        warpAffine( fB, fB, warp_matrix, fB.size(), INTER_LANCZOS4 );
+        
+        // Stop and print timer
         tm.stop();
         cout << tm.getTimeSec() << " sec" << endl;
         
+        // Check for keypress
         if( waitKey(PREVIEW_DELAY) > 0 )  break;
         
-        threshold( fB, fB, 80, 255, 3 );
-        equalizeHist( fB, fB );
-//         fB = fB( roi );
-        cvtColor( fB, fB, CV_GRAY2BGR);
+        // Convert to RGB
+        cvtColor( fB, fB, CV_GRAY2BGR );
+        
+        // Write to file
+        if( !writer.isOpened() ) 
+            writer.open( outFile, CV_FOURCC('X','V','I','D'), FILE_FPS, fB.size() );
         writer << fB;
         
+        // Resize frame for preview
         resize( fB, fB, CROP_SIZE );
-        imshow("Stabilization", fB );
+        
+        // Show stabilized frame
+        imshow( "Stabilization", fB );
     }
+    
+    // Release window
     destroyWindow( "Stabilization" );
     
 }
 
+
+
+
+// Super resolution function
 void superRes( string inFile, string outFile ) {
     
+    // Superres scale factor
     static const int scale = 10;
+    // Superres iteration count
     static const int iterations = 10;
-    static const int temporalAreaRadius = 50;
+    // Superres frame radius
+    static const int temporalAreaRadius = 40;
     
+    // Create framesource
     Ptr<FrameSource> frameSource;
     
     cout << "Opening file " << inFile << endl;
     frameSource = createFrameSource_Video( inFile );
     
-//     Mat frame;
-//     frameSource->nextFrame(frame);
-//     frameSource->nextFrame(frame);
-//     frameSource->nextFrame(frame);
-    
-    Ptr<SuperResolution> superRes;   
+    // Skip first frame
+    {
+        Mat frame;
+        frameSource->nextFrame(frame);
+    }
+        
+    // Create superres instance
+    Ptr<SuperResolution> superRes;
+    // Use BTVL1 algorithm
     superRes = createSuperResolution_BTVL1();
+    // Use DualTVL1 optical flow algorithm
     superRes->setOpticalFlow( cv::superres::createOptFlow_DualTVL1() );
+    // Set parameters
     superRes->setScale( scale );
     superRes->setIterations( iterations );
     superRes->setTemporalAreaRadius( temporalAreaRadius );
     superRes->setInput( frameSource );
 
+    // Video writer instance
     VideoWriter writer;
 
+    // Process frames
     for( int i = 0;; ++i ) {
+        // Print current frame index
         cout << '[' << setw(3) << i << "] : " << flush;
+        
+        // Create result image matrix
         Mat result;
         
+        // Start processing timer
         TickMeter tm;
         tm.start();
+        
+        // Process frame
         superRes->nextFrame( result );
+        
+        // Stop and print timer
         tm.stop();
         cout << tm.getTimeSec() << " sec" << endl;
         
+        // Check for invalid result
         if( result.empty() ) break;
+        
+        // Check for keypress
         if( waitKey(PREVIEW_DELAY) > 0 )  break;
         
+        // Write result frame to file
         if( !writer.isOpened() ) 
             writer.open( outFile, CV_FOURCC('X','V','I','D'), FILE_FPS, result.size() );
         writer << result;
         
+        // Resize frame for the preview
         resize( result, result, CROP_SIZE );
         
+        // Show frame
         imshow("Super Resolution", result);
     }
+    
+    // Release window
     destroyWindow( "Super Resolution" );
     
 }
 
+
+
+
+// Morphing function
 void morph( string inFile, string outFile ) {
     
+    // Open input file
     VideoCapture cap( inFile );
     if( !cap.isOpened() ) {
         cerr << "Input file cannot be opened" << endl;
         return;
     }
     
-    Mat fA;
-    
+    // Video writer instance
     VideoWriter writer;
-    writer.open( outFile, CV_FOURCC('X','V','I','D'), FILE_FPS, FILE_SIZE );
-    if( !writer.isOpened() ) {
-        cerr << "Output file cannot be opened" << endl;
-        return;
-    } else {
-        if( !cap.read(fA) ) return;
-        writer << fA;
-        cvtColor( fA, fA, CV_BGR2GRAY );
-    }
     
+    // Create frame matrix
+    Mat frame;
+    
+    // Convolution kernel definition
+    char d = 5, s = -1, c = 0;
+    char kernel_data[] = {
+            c,s,c, 
+            s,d,s, 
+            c,s,c
+    };
+    Mat kernel( 3, 3, CV_8S, kernel_data );
+    
+    // Process frames
     for( int i = 0;; ++i ) {
-        Mat fB;
-        if( !cap.read(fB) ) break;
+        // Read frame
+        if( !cap.read(frame) ) break;
+        
+        // Print current frame index
         cout << '[' << setw(3) << i << "] : " << flush;
         
+        // Start processing timer
         TickMeter tm;
         tm.start();
         
-        cvtColor(fB, fB, CV_BGR2GRAY);
+        // Convert to grayscale
+        cvtColor(frame, frame, CV_BGR2GRAY);
 
-        char d = 5, s = -1, c = 0;
-        char kernel_data[] = {
-             c,s,c, 
-             s,d,s, 
-             c,s,c
-        };
-        Mat kernel( 3, 3, CV_8S, kernel_data );
-        
-//         erode( fB, fB, getStructuringElement( MORPH_ELLIPSE, Size(ERODE_SIZE,ERODE_SIZE)) );
-//         dilate( fB, fB, getStructuringElement( MORPH_ELLIPSE, Size(DILATE_SIZE,DILATE_SIZE)) );
-//         dilate( fB, fB, getStructuringElement( MORPH_ELLIPSE, Size(DILATE_SIZE,DILATE_SIZE)) );
-//         erode( fB, fB, getStructuringElement( MORPH_ELLIPSE, Size(ERODE_SIZE,ERODE_SIZE)) );
-//         morphologyEx( fB, fB, MORPH_GRADIENT, getStructuringElement( MORPH_RECT, Size(4,4)));
-//         threshold(fB, fB, 60, 255, 3);
-//         bitwise_not( fB, fB );
-//         medianBlur( fB, fB, 15 );
-//         equalizeHist( fB, fB );
-//         threshold(fB, fB, 180, 255, THRESH_BINARY | THRESH_OTSU);
-        for( unsigned char i = 0; i < 3; ++i ) {
-            filter2D( fB, fB, -1, kernel );
-            erode( fB, fB, getStructuringElement( MORPH_ELLIPSE, Size(ERODE_SIZE,ERODE_SIZE)) );
-            dilate( fB, fB, getStructuringElement( MORPH_ELLIPSE, Size(DILATE_SIZE,DILATE_SIZE)) );
-//             medianBlur( fB, fB, 3 );
-            //dilate( fB, fB, getStructuringElement( MORPH_ELLIPSE, Size(DILATE_SIZE,DILATE_SIZE)) );
-//             erode( fB, fB, getStructuringElement( MORPH_ELLIPSE, Size(ERODE_SIZE,ERODE_SIZE)) );
+        // Apply filtering operations
+//         morphologyEx( frame, frame, MORPH_GRADIENT, getStructuringElement( MORPH_RECT, Size(4,4)));
+//         threshold(frame, frame, 60, 255, 3);
+//         bitwise_not( frame, frame );
+//         medianBlur( frame, frame, 15 );
+//         equalizeHist( frame, frame );
+//         threshold(frame, frame, 180, 255, THRESH_BINARY | THRESH_OTSU);
+        for( unsigned char i = 0; i < 1; ++i ) {
+//             filter2D( frame, frame, -1, kernel );
+//             erode( frame, frame, getStructuringElement( MORPH_ELLIPSE, Size(ERODE_SIZE,ERODE_SIZE)) );
+//             dilate( frame, frame, getStructuringElement( MORPH_ELLIPSE, Size(DILATE_SIZE,DILATE_SIZE)) );
+//             medianBlur( frame, frame, 3 );
+            dilate( frame, frame, getStructuringElement( MORPH_ELLIPSE, Size(DILATE_SIZE,DILATE_SIZE)) );
+            erode( frame, frame, getStructuringElement( MORPH_ELLIPSE, Size(ERODE_SIZE,ERODE_SIZE)) );
         }
-//         fastNlMeansDenoising( fB, fB, 5, 30 );
-        equalizeHist( fB, fB );
-        threshold(fB, fB, 180, 255, THRESH_BINARY);
-        dilate( fB, fB, getStructuringElement( MORPH_ELLIPSE, Size(2,2)) );
-        erode( fB, fB, getStructuringElement( MORPH_ELLIPSE, Size(2,2)) );
+//         fastNlMeansDenoising( frame, frame, 5, 30 );
+//         equalizeHist( frame, frame );
+//         threshold(frame, frame, 180, 255, THRESH_BINARY);
+        adaptiveThreshold(frame, frame, 255, ADAPTIVE_THRESH_MEAN_C, THRESH_BINARY_INV, 15, 2);
+//         dilate( frame, frame, getStructuringElement( MORPH_ELLIPSE, Size(ERODE_SIZE,ERODE_SIZE)) );
+//         erode( frame, frame, getStructuringElement( MORPH_ELLIPSE, Size(DILATE_SIZE,DILATE_SIZE)) );
         
-        fA = fB;
+        // Stop processing timer
         tm.stop();
         cout << tm.getTimeSec() << " sec" << endl;
         
+        // Wait for keypress
         if( waitKey(PREVIEW_DELAY) > 0 )  break;
         
-        cvtColor( fB, fB, CV_GRAY2BGR);
-        writer << fB;
+        // Convert to RGB
+        cvtColor( frame, frame, CV_GRAY2BGR);
         
-        resize( fB, fB, CROP_SIZE );
-        imshow("Morph", fB );
+        // Write frame to file        
+        if( !writer.isOpened() ) 
+            writer.open( outFile, CV_FOURCC('X','V','I','D'), FILE_FPS, frame.size() );
+        writer << frame;
+        
+        // Resize frame for the preview
+        resize( frame, frame, CROP_SIZE );
+        
+        // Show frame
+        imshow("Morph", frame );
     }
+    
+    // Release window
     destroyWindow( "Morph" );
     
-}
-
-
-int main( int argc, const char* argv[] ) {
-
-    if( argc < 1 ) {
-        cout << "Missing input file" << endl;
-        return 1;
-    }
-    
-//     track( argv[1], CROP_FILE );
-//     stabilize( CROP_FILE, STABLE_FILE );
-//     superRes( CROP_FILE, SUPER_FILE );
-    morph( SUPER_FILE, FINAL_FILE );
-    
-    return 0;
 }
