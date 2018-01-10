@@ -139,6 +139,15 @@ void track( string inFile, string outFile ) {
     // Initialize tracker
     tracker->init(frame, roi);
     
+    // Convolution kernel definition
+    char d = 5, s = -1, c = 0;
+    char kernel_data[] = {
+            c,s,c, 
+            s,d,s, 
+            c,s,c
+    };
+    Mat kernel( 3, 3, CV_8S, kernel_data );
+    
     // Process video frames
     for( int i = 0;; ++i ) {
         // Read frame
@@ -153,8 +162,9 @@ void track( string inFile, string outFile ) {
         // Check for keypress
         if( waitKey(PREVIEW_DELAY) > 0 )  break;
         
-        // Threshold image to increase contrast
-        cvtColor( crop, crop, CV_BGR2GRAY );
+        // Threshold image and equalize histogram to increase contrast
+        cvtColor( crop, crop, CV_BGR2GRAY );//             
+        filter2D( crop, crop, -1, kernel );
         threshold( crop, crop, 50, 255, THRESH_TOZERO | THRESH_OTSU );
         equalizeHist( crop, crop );
         cvtColor( crop, crop, CV_GRAY2BGR );
@@ -402,10 +412,10 @@ void morph( string inFile, string outFile ) {
 //         medianBlur( frame, frame, 15 );
 //         equalizeHist( frame, frame );
 //         threshold(frame, frame, 180, 255, THRESH_BINARY | THRESH_OTSU);
-        for( unsigned char i = 0; i < 1; ++i ) {
+        for( unsigned char i = 0; i < 3; ++i ) {
 //             filter2D( frame, frame, -1, kernel );
-//             erode( frame, frame, getStructuringElement( MORPH_ELLIPSE, Size(ERODE_SIZE,ERODE_SIZE)) );
-//             dilate( frame, frame, getStructuringElement( MORPH_ELLIPSE, Size(DILATE_SIZE,DILATE_SIZE)) );
+            erode( frame, frame, getStructuringElement( MORPH_ELLIPSE, Size(ERODE_SIZE,ERODE_SIZE)) );
+            dilate( frame, frame, getStructuringElement( MORPH_ELLIPSE, Size(DILATE_SIZE,DILATE_SIZE)) );
 //             medianBlur( frame, frame, 3 );
             dilate( frame, frame, getStructuringElement( MORPH_ELLIPSE, Size(DILATE_SIZE,DILATE_SIZE)) );
             erode( frame, frame, getStructuringElement( MORPH_ELLIPSE, Size(ERODE_SIZE,ERODE_SIZE)) );
@@ -413,7 +423,7 @@ void morph( string inFile, string outFile ) {
 //         fastNlMeansDenoising( frame, frame, 5, 30 );
 //         equalizeHist( frame, frame );
 //         threshold(frame, frame, 180, 255, THRESH_BINARY);
-        adaptiveThreshold(frame, frame, 255, ADAPTIVE_THRESH_MEAN_C, THRESH_BINARY_INV, 15, 2);
+        adaptiveThreshold(frame, frame, 255, ADAPTIVE_THRESH_MEAN_C, THRESH_BINARY_INV, 15, 10);
 //         dilate( frame, frame, getStructuringElement( MORPH_ELLIPSE, Size(ERODE_SIZE,ERODE_SIZE)) );
 //         erode( frame, frame, getStructuringElement( MORPH_ELLIPSE, Size(DILATE_SIZE,DILATE_SIZE)) );
         

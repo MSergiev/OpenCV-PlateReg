@@ -1,2 +1,2 @@
-test: superres.cpp
-	g++ -o superres superres.cpp `pkg-config --cflags --libs opencv`
+lpreg: superres.cpp
+	g++ -o lpreg superres.cpp `pkg-config --cflags --libs opencv`
